@@ -11,6 +11,6 @@ class Settings:
     risk_free_rate: float = 0.02  # annualized
     seed: int = 42
 
-    data_raw_dir: Path = Path("data/raw")
-    data_processed_dir: Path = Path("data/processed")
-    reports_figures_dir: Path = Path("reports/figures")
+    data_raw_dir: Path = Path("../data/raw")
+    data_processed_dir: Path = Path("../data/processed")
+    reports_figures_dir: Path = Path("../reports/figures")
