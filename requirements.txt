@@ -11,3 +11,4 @@ PyPortfolioOpt
 scipy
 arch
 seaborn
+jupyter
