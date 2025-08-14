@@ -7,4 +7,8 @@ statsmodels
 pmdarima
 jupyter
 yfinance
-
+tensorflow
+PyPortfolioOpt
+scipy
+arch
+seaborn
