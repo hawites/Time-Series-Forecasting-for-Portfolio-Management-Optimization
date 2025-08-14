@@ -29,3 +29,15 @@ class Plotter:
         plt.savefig(path)
         plt.close()
         return path
+    def line_with_ci(self, mean: pd.Series, lower: pd.Series, upper: pd.Series,
+                     title: str, fname: str, ylabel: str = "Value") -> Path:
+        import matplotlib.pyplot as plt
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+        fig, ax = plt.subplots(figsize=(10,5))
+        ax.plot(mean.index, mean.values, label="Forecast (mean)")
+        ax.fill_between(mean.index, lower.values, upper.values, alpha=0.25, label="CI band")
+        ax.set_title(title); ax.set_xlabel("Date"); ax.set_ylabel(ylabel)
+        ax.legend()
+        path = self.out_dir / fname
+        plt.tight_layout(); plt.savefig(path); plt.close()
+        return path
