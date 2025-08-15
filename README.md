@@ -1,4 +1,4 @@
-# 📈 GMF — Time Series & Portfolio (Tasks 1–3)
+# 📈 GMF — Time Series & Portfolio (Tasks 1–4)
 
 OOP workflow for **data preprocessing & EDA** (Task 1), **modeling** (Task 2), and **6–12 month forecasting** (Task 3) on **TSLA**, **BND**, **SPY**. Outputs will feed **efficient frontier** optimization and **backtesting** next.
 
@@ -79,6 +79,141 @@ We forecast **TSLA log returns**, then reconstruct **price paths** and **95% CI 
 
 ---
 
-## ✅ Next Steps
-- **Task 4 (MPT)**: Use TSLA **expected return** from Task 2/3; BND & SPY **historical annualized**; compute covariance; **Efficient Frontier**; mark **Tangency** & **Min-Vol**; recommend weights.
-- **Task 5 (Backtest)**: Compare strategy vs **60/40 SPY/BND** over Aug‑2024 → Jul‑2025; report cumulative return & Sharpe.
+# 🚀 Task 4: Portfolio Optimization (Modern Portfolio Theory)
+
+This task builds a **three-asset portfolio** (**TSLA**, **BND**, **SPY**) using **Modern Portfolio Theory (MPT)**.  
+You will construct expected returns and covariance, compute the **Efficient Frontier**, and identify the **Maximum Sharpe (Tangency)** and **Minimum Volatility** portfolios.  
+Artifacts include a frontier plot, portfolio weights, and performance stats for decision-making and later **backtesting** (Task 5).
+
+---
+
+## 🎯 Objective
+- Translate model signals (Task 2–3) and historical data into **portfolio weights**.
+- Generate the **Efficient Frontier** and mark **Max Sharpe** & **Min Vol** portfolios.
+- Export weights and performance metrics for reporting and backtesting.
+
+---
+
+## 📦 Inputs
+- **Processed features** (from Task 1):  
+  `data/processed/merged_features.csv` (contains daily simple returns: `TSLA_ret`, `BND_ret`, `SPY_ret`)
+- **TSLA 12-month forecast (optional)** (from Task 3):  
+  `reports/interim/tsla_forecast_12m.csv` (uses `ret_mean` column of daily returns)  
+  > If missing, the optimizer **falls back** to TSLA’s **historical annualized mean**.
+- **Risk-free rate**: from `src/config.py → Settings.risk_free_rate` (annualized, e.g., 0.045)
+
+---
+
+## 🧠 Methodology
+
+### 1) Expected Returns (annualized vector **μ**)
+- **TSLA**: If `tsla_forecast_12m.csv` exists, compute `mean(ret_mean) × 252`. Otherwise, historical daily mean × 252.  
+- **BND & SPY**: Historical daily mean × 252.
+
+### 2) Covariance (annualized matrix **Σ**)
+- Use historical daily returns of **TSLA**, **BND**, **SPY** → sample covariance × 252.  
+  > Optional enhancement (not required here): consider shrinkage (Ledoit–Wolf) via `pypfopt.risk_models` for more stable Σ.
+
+### 3) Optimization (PyPortfolioOpt)
+- **Efficient Frontier** traced by sweeping target returns.  
+- **Max Sharpe**: Tangency portfolio maximizing `(μ_p − r_f)/σ_p`.  
+- **Min Volatility**: Portfolio minimizing σ_p independent of μ.
+
+### 4) Outputs
+- Frontier points (**μ**, **σ**), **Max Sharpe** & **Min Vol** metrics.
+- Cleaned weights (sum to 1, small values zeroed).
+
+---
+
+## 🗂 Files & Modules
+
+**Code**
+- `src/portfolio/optimizer.py` → `PortfolioOptimizer` (build μ & Σ, frontier, max-sharpe, min-vol)
+- `src/utils/plotting.py` → `Plotter.efficient_frontier(...)` (frontier + markers)
+
+**Notebook**
+- `notebooks/Portfolio.ipynb` (run end-to-end; saves all artifacts)
+
+**Tests**
+- `tests/test_portfolio_optimizer.py` (synthetic sanity checks)
+
+---
+
+## ▶️ How to Run
+
+1. **Install dependencies**
+   ```bash
+   pip install PyPortfolioOpt
+   ```
+
+2. **Open** `notebooks/Portfolio.ipynb` and run all cells:
+   - Loads `merged_features.csv`
+   - Builds expected returns (μ) and covariance (Σ)
+   - Computes **Efficient Frontier**, **Max Sharpe**, **Min Vol**
+   - Saves weights/metrics and frontier figure
+
+3. **Artifacts written to**
+   - **Figure**: `reports/figures/efficient_frontier.png`
+   - **Weights**:  
+     - `reports/interim/weights_max_sharpe.csv`  
+     - `reports/interim/weights_min_vol.csv`
+   - **Stats**: `reports/interim/portfolio_stats.csv` (μ, σ, Sharpe for both portfolios)
+
+---
+
+## 📊 Interpreting the Results
+
+- **Max Sharpe (Tangency)**: Highest expected risk‑adjusted return.  
+  Typical outcome: overweight **SPY**, tuned **TSLA**, and **BND** as ballast, depending on inputs.
+- **Min Volatility**: Stability‑first.  
+  Typical outcome: larger **BND** weight, modest **SPY**, minimal **TSLA**.
+
+> **Note on your Task 3 result:** If the 12‑month TSLA expected return is **near zero or negative**, the optimizer will **naturally reduce TSLA weight** in Max Sharpe and Min Vol portfolios. This is expected behavior and reflects a **risk‑aware** stance.
+
+---
+
+## 🧪 Sanity Checks
+
+- **Weights sum to 1** (check CSV).  
+- **Sharpe** should be **higher** for the Max Sharpe portfolio than Min Vol.  
+- **Frontier** must slope upward (monotonic μ with σ), aside from minor numerical noise.  
+- If numerical issues occur (e.g., singular Σ), consider:  
+  - Increasing lookback history, or  
+  - Using shrinkage covariance (`risk_models.CovarianceShrinkage`).
+
+---
+
+## ⚙️ Git Workflow (suggested)
+
+```bash
+git checkout -b feat/task4-portfolio-optimization
+
+git add src/portfolio/optimizer.py tests/test_portfolio_optimizer.py
+git commit -m "feat(task4): MPT optimizer + tests"
+
+git add src/utils/plotting.py
+git commit -m "feat(task4): efficient frontier plotting with markers"
+
+git add notebooks/04_portfolio.ipynb
+git commit -m "docs(task4): portfolio optimization notebook (frontier, max-sharpe, min-vol)"
+```
+
+---
+
+## 📌 Reporting Snippets (paste into memo)
+
+**Method:** μ from forecast+history, Σ from historical, MPT via PyPortfolioOpt.  
+**Key Portfolios:** Max Sharpe (tangency) and Min Vol.  
+**Recommendation:** Choose **[Max Sharpe / Min Vol]** based on mandate and risk tolerance; if TSLA forecast weak/negative, tilt **toward SPY/BND** to preserve Sharpe.
+
+---
+
+## 🔭 Next (Task 5: Backtesting)
+
+- Use chosen weights to **simulate performance** vs a **60/40 SPY/BND** benchmark over **Aug‑2024 → Jul‑2025**.  
+- Plot cumulative returns; compute annualized return, volatility, and Sharpe; summarize relative performance.
+
+
+
+
+
