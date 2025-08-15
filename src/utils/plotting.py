@@ -56,3 +56,17 @@ class Plotter:
         path = self.out_dir / fname
         plt.tight_layout(); plt.savefig(path); plt.close()
         return path
+    def cumulative_returns(self, cum_df, title, fname, ylabel="Cumulative Growth ($1 start)"):
+        
+        import matplotlib.pyplot as plt
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+        fig, ax = plt.subplots(figsize=(10,6))
+        for col in cum_df.columns:
+            ax.plot(cum_df.index, cum_df[col].values, label=col)
+        ax.set_title(title)
+        ax.set_xlabel("Date")
+        ax.set_ylabel(ylabel)
+        ax.legend()
+        out = self.out_dir / fname
+        plt.tight_layout(); plt.savefig(out); plt.close()
+        return out
