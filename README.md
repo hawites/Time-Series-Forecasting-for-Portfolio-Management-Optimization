@@ -1,219 +1,206 @@
-# 📈 GMF — Time Series & Portfolio (Tasks 1–4)
+# 📚 GMF Investments — Time Series & Portfolio Optimization (Tasks 1–5)
 
-OOP workflow for **data preprocessing & EDA** (Task 1), **modeling** (Task 2), and **6–12 month forecasting** (Task 3) on **TSLA**, **BND**, **SPY**. Outputs will feed **efficient frontier** optimization and **backtesting** next.
+End-to-end, **OOP-structured** project that fetches market data, engineers features, builds/compares forecasters, produces **6–12 month** projections, optimizes a **TSLA–BND–SPY** portfolio (MPT), and **backtests** vs a 60/40 benchmark.
+
+> Stack: `yfinance`, `pandas`, `statsmodels (ARIMA)`, optional `tensorflow` (LSTM), `PyPortfolioOpt` (MPT).  
+> Notebooks call into modules under `src/` and save reproducible artifacts.
 
 ---
 
 ## 🔧 Quick Setup
-- Python **3.11** recommended (TensorFlow/LSTM). ARIMA runs fine on **3.13**.
+
+- Python **3.11** recommended (for TensorFlow/LSTM). ARIMA & Tasks 1/4/5 also work on **3.13**.
 - Install & test:
   ```bash
   pip install -r requirements.txt
   pytest -q
   ```
+- Optional: install TensorFlow if you will run the LSTM model.
 
-**Key folders**
+**Key structure**
 ```
-src/ (config, data_loader, features, eda, splits, forecast, models/, utils/)
-data/{raw,processed}
-reports/{figures,interim}
-notebooks/{01_data_eda.ipynb, 02_modeling.ipynb, 03_forecast.ipynb}
+src/
+  config.py
+  data_loader.py
+  features.py
+  eda.py
+  splits.py
+  forecast.py
+  models/
+    arima_model.py
+    lstm_model.py
+  portfolio/optimizer.py
+  backtest/backtester.py
+  utils/
+    metrics.py
+    plotting.py
+data/
+  raw/            # per-ticker yfinance cache
+  processed/      # merged_features.csv
+reports/
+  figures/        # PNGs for EDA, forecasts, frontier, backtest
+  interim/        # CSV snapshots (stats, metrics, forecasts, weights, backtest)
+notebooks/
+  Data_eda.ipynb
+  Modeling.ipynb
+  Forecast.ipynb
+  Portfolio.ipynb
+  Backtest.ipynb
+tests/
 ```
 
 ---
 
-## 📊 Task 1 — EDA & Preprocessing (Summary)
-- `DataLoader` fetches yfinance data (**2015-07-01 → 2025-07-31**) to `data/raw/`.
-- `FeatureEngineer` pivots **Adj Close** to wide (`TSLA`, `BND`, `SPY`), coerces numerics, ffill/bfill gaps; computes `*_ret`, `*_logret`; exports `data/processed/merged_features.csv`.
-- `EDAAnalyzer` produces price/returns charts, rolling stats, **ADF** stationarity checks, **VaR** and **Sharpe**.
-  - Prices: **non-stationary**; Returns: **stationary** → model **returns**.
+# 📊 Task 1 — Exploratory Data Analysis & Preprocessing
+
+### 🎯 Objective
+- Fetch **TSLA**, **BND**, **SPY** daily data (Adj Close) via `yfinance` for **2015-07-01 → 2025-07-31**.
+- Clean/align series; compute **daily simple** (`*_ret`) and **log returns** (`*_logret`).
+- Run EDA (trends, volatility, stationarity) + basic risk metrics.
+
+### 🗂 Implementation
+- `DataLoader.fetch_and_cache()` saves per-ticker CSVs to `data/raw/`.
+- `FeatureEngineer.pipeline()` pivots Adj Close to wide (`TSLA`, `BND`, `SPY`), coerces numerics, fixes ±∞, `ffill→bfill` gaps, derives returns, exports:
+  - `data/processed/merged_features.csv`
+
+### 🔍 EDA & Metrics
+- Plots: `closing_prices.png`, `daily_returns.png`, `tsla_rolling_stats.png` (21/63/252-day windows).
+- **ADF**: prices **non-stationary**, returns **stationary** (e.g., TSLA log-returns p≈1.4e-21).
+- **Risk** saved to `reports/interim/risk_metrics.csv`: VaR₉₅ (daily), annual Sharpe, annualized return/vol.
 
 **Artifacts**
-- Data: `data/processed/merged_features.csv`
-- Figures: `reports/figures/closing_prices.png`, `daily_returns.png`, `tsla_rolling_stats.png`
-- CSVs: `reports/interim/basic_stats.csv`, `reports/interim/risk_metrics.csv`
+- Data: `data/processed/merged_features.csv`  
+- Figures: `reports/figures/closing_prices.png`, `daily_returns.png`, `tsla_rolling_stats.png`  
+- Tables: `reports/interim/basic_stats.csv`, `reports/interim/risk_metrics.csv`
 
 ---
 
-## 🤖 Task 2 — Modeling (ARIMA vs LSTM) (Summary)
+# 🤖 Task 2 — Modeling (ARIMA vs LSTM)
+
+### 🎯 Objective
 - Chronological split: **train ≤ 2023-12-31**, **test ≥ 2024-01-01**.
-- **ARIMAModel**: AIC grid over `(p,d,q)` on **returns** (`trend="n"`); fit on **RangeIndex**, then re-attach dates (avoids freq warnings).
-- **LSTMModel** (optional): univariate LSTM windowing (`lookback=60`); skipped if TensorFlow not installed.
-- Evaluation on **returns** and **reconstructed prices** (MAE/RMSE/MAPE).  
-  - In our run, ARIMA selected **(2,0,2)**.
+- Compare **ARIMA** (classical) vs **LSTM** (optional) on **TSLA returns** (prefer `TSLA_logret`).
+
+### 🧩 Implementation
+- `ARIMAModel`: AIC grid search over `(p,d,q)`; fit on **RangeIndex** to suppress date-freq warnings; reattach real dates for plots.
+- `LSTMModel` (optional): univariate windowed LSTM (lookback=60). Skips gracefully if TensorFlow not installed.
+- Metrics on **returns** and **reconstructed prices** (MAE/RMSE/MAPE). Price path: `P̂_t = P_train_last × ∏(1 + r̂_t)`.
 
 **Artifacts**
-- Figures: `reports/figures/tsla_pred_price_arima.png` (+ LSTM if available)
-- CSV: `reports/interim/task2_metrics.csv`
+- `reports/interim/task2_metrics.csv`  
+- `reports/figures/tsla_pred_price_arima.png` (+ LSTM plot if available)
+
+**Notes**
+- For returns, `trend="n"` and **d=0** are typical.  
+- Convergence warnings during ARIMA search are normal; the class skips non-convergent combos and retries with higher maxiter.
 
 ---
 
-## 🔮 Task 3 — 6–12 Month Forecasts (ARIMA on TSLA Returns)
-We forecast **TSLA log returns**, then reconstruct **price paths** and **95% CI bands**.
+# 🔮 Task 3 — 6–12 Month Forecasts (ARIMA on Returns)
 
-### Results (from `reports/interim/forecast_summary.csv`)
+### 🎯 Objective
+- Forecast **TSLA log returns** 6 & 12 months ahead; produce **95% CI** bands; reconstruct price paths.
+
+### 🧩 Implementation
+- `ARIMAForecaster` fits on returns (integer index), forecasts `steps` daily returns + CI, then reconstructs mean/CI price paths from the last train price.
+- Notebook saves **CSV** and **plots** for both horizons.
+
+### 📈 Results Summary (from your run)
+`reports/interim/forecast_summary.csv`:
+
 | horizon | ARIMA order | mean_ret_annualized | ret_CI_wid_avg | px_end_mean | px_end_lo | px_end_hi |
 |:------:|:-----------:|--------------------:|---------------:|------------:|----------:|----------:|
 | 6m | (2, 0, 2) | -0.002249 | 0.141764 | 248.198215 | 0.023533 | 1,387,656.000000 |
 | 12m | (2, 0, 2) | -0.001124 | 0.141779 | 248.198214 | 0.000002 | 7,771,179,000.000000 |
 
 **Interpretation**
-- **Mean drift**: ~flat/slightly negative (−0.11% to −0.23% annualized).
-- **Return CI** averages ≈ **0.142** per day. Compounded into prices, this yields **very wide price CIs** (upper tails blow up), which is expected when compounding daily bounds directly.
+- Mean drift ~flat/slightly negative (annualized).  
+- **Return CI** ≈ 0.142/day; compounding daily **upper/lower** bounds yields **very wide price CIs** (upper tails explode). Expected with naive compounding.
 
-**Best practice (applied in the memo going forward)**
-- Emphasize **CI on returns**; for prices, prefer:
-  1) Aggregate **log-returns** (sum) then exponentiate (lognormal assumption), or
-  2) **Monte Carlo** fan charts using ARIMA residuals (5th–95th percentiles).
+**Better practice for prices**
+- Prefer **CI on returns**, and for prices use either:
+  - Sum of **log-returns** → exponentiate (lognormal assumption), or
+  - **Monte Carlo** fan charts using ARIMA residuals (5–95th percentiles).
 
 **Artifacts**
-- Figures: `reports/figures/tsla_returns_forecast_6m.png`, `tsla_price_forecast_6m.png`, `tsla_returns_forecast_12m.png`, `tsla_price_forecast_12m.png`
-- CSVs: `reports/interim/tsla_forecast_6m.csv`, `reports/interim/tsla_forecast_12m.csv`, `reports/interim/forecast_summary.csv`
+- Figures: `tsla_returns_forecast_6m.png`, `tsla_price_forecast_6m.png`, `tsla_returns_forecast_12m.png`, `tsla_price_forecast_12m.png`  
+- CSVs: `tsla_forecast_6m.csv`, `tsla_forecast_12m.csv`, `forecast_summary.csv`
 
 ---
 
-## ▶️ How to Run
-1) **Task 1** — `notebooks/Data_eda.ipynb` → processed data + EDA outputs.  
-2) **Task 2** — `notebooks/Modeling.ipynb` → ARIMA/LSTM comparison; metrics/plots.  
-3) **Task 3** — `notebooks/Forecast.ipynb` → 6m/12m forecasts with CI; summary CSV.
+# 🧮 Task 4 — Portfolio Optimization (MPT)
+
+### 🎯 Objective
+Turn forecasts + history into **weights**; compute **Efficient Frontier**; mark **Max Sharpe** (tangency) and **Min Vol** portfolios.
+
+### 🧩 Implementation
+- Expected returns **μ (annualized)**:
+  - **TSLA**: mean of Task-3 daily `ret_mean` × 252 (fallback: historical mean×252)
+  - **BND & SPY**: historical daily mean × 252
+- Covariance **Σ (annualized)**: sample cov of daily returns × 252
+- Optimization using `PyPortfolioOpt`:
+  - `max_sharpe(rf)` and `min_volatility()`
+  - Frontier traced by sweeping target μ
+
+**Artifacts**
+- Figure: `reports/figures/efficient_frontier.png`  
+- Weights: `reports/interim/weights_max_sharpe.csv`, `weights_min_vol.csv`  
+- Stats: `reports/interim/portfolio_stats.csv` (μ, σ, Sharpe per portfolio)
+
+**Recommendation pattern**
+- Choose **Max Sharpe** unless σ is beyond mandate (e.g., > 1.5× SPY vol), then **Min Vol**. Document rationale in memo.
 
 ---
 
-# 🚀 Task 4: Portfolio Optimization (Modern Portfolio Theory)
+# 🧪 Task 5 — Backtesting (Strategy vs 60/40)
 
-This task builds a **three-asset portfolio** (**TSLA**, **BND**, **SPY**) using **Modern Portfolio Theory (MPT)**.  
-You will construct expected returns and covariance, compute the **Efficient Frontier**, and identify the **Maximum Sharpe (Tangency)** and **Minimum Volatility** portfolios.  
-Artifacts include a frontier plot, portfolio weights, and performance stats for decision-making and later **backtesting** (Task 5).
+### 🎯 Objective
+Simulate the selected portfolio vs a **60% SPY / 40% BND** benchmark over **Aug-2024 → Jul-2025**.
 
----
+### 🧩 Implementation
+- `Backtester` simulates **buy-and-hold** (`rebalance="none"`) or **monthly** rebalancing.
+- Inputs: daily simple returns (`TSLA_ret`, `BND_ret`, `SPY_ret`) → renamed to `TSLA/BND/SPY`.
+- Strategy weights from Task-4 CSV (Max Sharpe by default; fallback to Min Vol).
 
-## 🎯 Objective
-- Translate model signals (Task 2–3) and historical data into **portfolio weights**.
-- Generate the **Efficient Frontier** and mark **Max Sharpe** & **Min Vol** portfolios.
-- Export weights and performance metrics for reporting and backtesting.
+**Artifacts**
+- Figure: `reports/figures/backtest_cumreturns.png`  
+- CSVs: `reports/interim/backtest_daily_returns.csv`, `backtest_cumulative_curves.csv`, `backtest_stats.csv`
 
----
-
-## 📦 Inputs
-- **Processed features** (from Task 1):  
-  `data/processed/merged_features.csv` (contains daily simple returns: `TSLA_ret`, `BND_ret`, `SPY_ret`)
-- **TSLA 12-month forecast (optional)** (from Task 3):  
-  `reports/interim/tsla_forecast_12m.csv` (uses `ret_mean` column of daily returns)  
-  > If missing, the optimizer **falls back** to TSLA’s **historical annualized mean**.
-- **Risk-free rate**: from `src/config.py → Settings.risk_free_rate` (annualized, e.g., 0.045)
+**Reported metrics**
+- Annualized return, annualized volatility, and **Sharpe** (uses `Settings.risk_free_rate`).  
+- Conclusion: “Outperformed” if strategy Sharpe > benchmark Sharpe (state both numbers).
 
 ---
 
-## 🧠 Methodology
+## ▶️ How to Run (Notebooks)
 
-### 1) Expected Returns (annualized vector **μ**)
-- **TSLA**: If `tsla_forecast_12m.csv` exists, compute `mean(ret_mean) × 252`. Otherwise, historical daily mean × 252.  
-- **BND & SPY**: Historical daily mean × 252.
-
-### 2) Covariance (annualized matrix **Σ**)
-- Use historical daily returns of **TSLA**, **BND**, **SPY** → sample covariance × 252.  
-  > Optional enhancement (not required here): consider shrinkage (Ledoit–Wolf) via `pypfopt.risk_models` for more stable Σ.
-
-### 3) Optimization (PyPortfolioOpt)
-- **Efficient Frontier** traced by sweeping target returns.  
-- **Max Sharpe**: Tangency portfolio maximizing `(μ_p − r_f)/σ_p`.  
-- **Min Volatility**: Portfolio minimizing σ_p independent of μ.
-
-### 4) Outputs
-- Frontier points (**μ**, **σ**), **Max Sharpe** & **Min Vol** metrics.
-- Cleaned weights (sum to 1, small values zeroed).
+1. **Task 1** — `notebooks/Data_eda.ipynb` → processed data + EDA artifacts  
+2. **Task 2** — `notebooks/Modeling.ipynb` → ARIMA vs LSTM; metrics & plots  
+3. **Task 3** — `notebooks/Forecast.ipynb` → 6m/12m forecasts; CI bands; summary CSV  
+4. **Task 4** — `notebooks/Portfolio.ipynb` → Efficient Frontier; Max Sharpe & Min Vol; weights & stats  
+5. **Task 5** — `notebooks/Backtest.ipynb` → backtest vs 60/40; cumulative curves & stats
 
 ---
 
-## 🗂 Files & Modules
+## 🧱 Known Pitfalls & Fixes
 
-**Code**
-- `src/portfolio/optimizer.py` → `PortfolioOptimizer` (build μ & Σ, frontier, max-sharpe, min-vol)
-- `src/utils/plotting.py` → `Plotter.efficient_frontier(...)` (frontier + markers)
-
-**Notebook**
-- `notebooks/Portfolio.ipynb` (run end-to-end; saves all artifacts)
-
-**Tests**
-- `tests/test_portfolio_optimizer.py` (synthetic sanity checks)
+- **ARIMA warnings & convergence**: Fit on **RangeIndex**; constrain grid for returns (`d=0`, small `p,q`); skip/retry on non-convergence.  
+- **Date frequency warnings**: Avoid via integer index during fit; reattach dates for plotting.  
+- **Type errors in returns**: Coerce numerics (`errors="coerce"`), replace ±∞, `ffill→bfill` before `pct_change()`.  
+- **TensorFlow on Windows**: Use Python **3.11** env; LSTM optional and skipped if TF absent.  
+- **Exploding price CIs**: Don’t compound daily min/max; use log-return aggregation or Monte Carlo.
 
 ---
 
-## ▶️ How to Run
 
-1. **Install dependencies**
-   ```bash
-   pip install PyPortfolioOpt
-   ```
 
-2. **Open** `notebooks/Portfolio.ipynb` and run all cells:
-   - Loads `merged_features.csv`
-   - Builds expected returns (μ) and covariance (Σ)
-   - Computes **Efficient Frontier**, **Max Sharpe**, **Min Vol**
-   - Saves weights/metrics and frontier figure
+## 📌 Memo Snippets (paste into Investment Memo)
 
-3. **Artifacts written to**
-   - **Figure**: `reports/figures/efficient_frontier.png`
-   - **Weights**:  
-     - `reports/interim/weights_max_sharpe.csv`  
-     - `reports/interim/weights_min_vol.csv`
-   - **Stats**: `reports/interim/portfolio_stats.csv` (μ, σ, Sharpe for both portfolios)
+- **Methodology:** μ from forecast (TSLA) + history (BND/SPY); Σ from historical; MPT for weights; backtest vs 60/40.  
+- **Task 3:** CI widening over horizon; price CI caveat; focus on return bands.  
+- **Task 4:** Present Max Sharpe & Min Vol weights and stats; recommend based on risk mandate.  
+- **Task 5:** Summarize Sharpe/return/vol vs benchmark; state rebalancing policy & window.
 
 ---
 
-## 📊 Interpreting the Results
-
-- **Max Sharpe (Tangency)**: Highest expected risk‑adjusted return.  
-  Typical outcome: overweight **SPY**, tuned **TSLA**, and **BND** as ballast, depending on inputs.
-- **Min Volatility**: Stability‑first.  
-  Typical outcome: larger **BND** weight, modest **SPY**, minimal **TSLA**.
-
-> **Note on your Task 3 result:** If the 12‑month TSLA expected return is **near zero or negative**, the optimizer will **naturally reduce TSLA weight** in Max Sharpe and Min Vol portfolios. This is expected behavior and reflects a **risk‑aware** stance.
-
----
-
-## 🧪 Sanity Checks
-
-- **Weights sum to 1** (check CSV).  
-- **Sharpe** should be **higher** for the Max Sharpe portfolio than Min Vol.  
-- **Frontier** must slope upward (monotonic μ with σ), aside from minor numerical noise.  
-- If numerical issues occur (e.g., singular Σ), consider:  
-  - Increasing lookback history, or  
-  - Using shrinkage covariance (`risk_models.CovarianceShrinkage`).
-
----
-
-## ⚙️ Git Workflow (suggested)
-
-```bash
-git checkout -b feat/task4-portfolio-optimization
-
-git add src/portfolio/optimizer.py tests/test_portfolio_optimizer.py
-git commit -m "feat(task4): MPT optimizer + tests"
-
-git add src/utils/plotting.py
-git commit -m "feat(task4): efficient frontier plotting with markers"
-
-git add notebooks/04_portfolio.ipynb
-git commit -m "docs(task4): portfolio optimization notebook (frontier, max-sharpe, min-vol)"
-```
-
----
-
-## 📌 Reporting Snippets (paste into memo)
-
-**Method:** μ from forecast+history, Σ from historical, MPT via PyPortfolioOpt.  
-**Key Portfolios:** Max Sharpe (tangency) and Min Vol.  
-**Recommendation:** Choose **[Max Sharpe / Min Vol]** based on mandate and risk tolerance; if TSLA forecast weak/negative, tilt **toward SPY/BND** to preserve Sharpe.
-
----
-
-## 🔭 Next (Task 5: Backtesting)
-
-- Use chosen weights to **simulate performance** vs a **60/40 SPY/BND** benchmark over **Aug‑2024 → Jul‑2025**.  
-- Plot cumulative returns; compute annualized return, volatility, and Sharpe; summarize relative performance.
-
-
-
-
-
+**Reminder:** Models are **inputs** to a broader decision framework. Treat forecasts as **probabilistic**, stress-test assumptions, and triangulate with macro/valuation insight.
